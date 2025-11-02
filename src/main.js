@@ -41,17 +41,13 @@ async function main() {
 	let videoInput = await getWebcamStream(currentFacingMode);
 	document.body.appendChild(videoInput); // HACK: Desktop Safari won’t update the shader otherwise.
 
-	const displayShader = new ShaderPad(fragmentShaderSrc, { plugins: [history()] });
-	const exportCanvas = document.createElement('canvas');
-	exportCanvas.classList.add('export');
-	const exportShader = new ShaderPad(fragmentShaderSrc, { canvas: exportCanvas, plugins: [save(), history()] });
-	[displayShader, exportShader].forEach(shader => {
-		shader.initializeUniform('u_frameDelay', 'int', frameDelay);
-		shader.initializeTexture('u_inputStream', videoInput, HISTORY_DEPTH);
-	});
+	const shader = new ShaderPad(fragmentShaderSrc, { plugins: [save(), history()] });
+	const { canvas } = shader;
+	shader.initializeUniform('u_frameDelay', 'int', frameDelay);
+	shader.initializeTexture('u_inputStream', videoInput, HISTORY_DEPTH);
 
 	function exportHighRes() {
-		displayShader.pause();
+		shader.pause();
 		let exportWidth = videoInput.videoWidth;
 		let exportHeight = videoInput.videoHeight;
 
@@ -65,16 +61,15 @@ async function main() {
 				exportWidth = Math.round(MAX_EXPORT_DIMENSION * aspectRatio);
 			}
 		}
-		exportCanvas.width = exportWidth;
-		exportCanvas.height = exportHeight;
+		const originalWidth = canvas.width;
+		const originalHeight = canvas.height;
+		canvas.width = exportWidth;
+		canvas.height = exportHeight;
 
-		exportShader.updateUniforms({ u_frameDelay: frameDelay });
-		exportShader.updateTextures({ u_inputStream: videoInput });
-		document.body.appendChild(exportCanvas);
 		setTimeout(async () => {
-			exportShader.step(0);
-			await exportShader.save('channel-delay');
-			document.body.removeChild(exportCanvas);
+			await shader.save('channel-delay');
+			canvas.width = originalWidth;
+			canvas.height = originalHeight;
 			play();
 		}, 8);
 	}
@@ -90,7 +85,7 @@ async function main() {
 		const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
 		try {
 			videoInput = await getWebcamStream(newFacingMode);
-			displayShader.updateTextures({ u_inputStream: videoInput });
+			shader.updateTextures({ u_inputStream: videoInput });
 			currentFacingMode = newFacingMode;
 			document.body.classList.toggle('flipped', newFacingMode === 'environment');
 		} catch (error) {
@@ -102,11 +97,11 @@ async function main() {
 		switch (e.key) {
 			case 'ArrowUp':
 				frameDelay = Math.min(MAX_FRAME_DELAY, frameDelay + 1);
-				displayShader.updateUniforms({ u_frameDelay: frameDelay });
+				shader.updateUniforms({ u_frameDelay: frameDelay });
 				break;
 			case 'ArrowDown':
 				frameDelay = Math.max(MIN_FRAME_DELAY, frameDelay - 1);
-				displayShader.updateUniforms({ u_frameDelay: frameDelay });
+				shader.updateUniforms({ u_frameDelay: frameDelay });
 				break;
 			case 's':
 				exportHighRes();
@@ -122,7 +117,7 @@ async function main() {
 		if (diff > 16) lastTapTime = 0;
 		if (direction === 'y') {
 			frameDelay = Math.max(MIN_FRAME_DELAY, Math.min(MAX_FRAME_DELAY, frameDelay - Math.sign(diff)));
-			displayShader.updateUniforms({ u_frameDelay: frameDelay });
+			shader.updateUniforms({ u_frameDelay: frameDelay });
 		}
 	});
 
@@ -137,8 +132,8 @@ async function main() {
 	});
 
 	let play = function play() {
-		displayShader.play(() => {
-			displayShader.updateTextures({ u_inputStream: videoInput });
+		shader.play(() => {
+			shader.updateTextures({ u_inputStream: videoInput });
 		});
 	};
 	play();
